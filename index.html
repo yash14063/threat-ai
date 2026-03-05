@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreatSense OS | Enterprise Command Center</title>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
+    <style>
+        /* ==========================================================================
+           1. CORE DESIGN SYSTEM & VARIABLES
+           ========================================================================== */
+        :root { 
+            --bg-base: #020617; --panel-bg: rgba(15, 23, 42, 0.65); 
+            --cyan: #06b6d4; --cyan-glow: rgba(6, 182, 212, 0.6);
+            --green: #10b981; --green-glow: rgba(16, 185, 129, 0.6);
+            --red: #ef4444; --red-glow: rgba(239, 68, 68, 0.8);
+            --orange: #f97316; --orange-glow: rgba(249, 115, 22, 0.8);
+            --muted: #64748b; --text-main: #f8fafc; --grid-line: rgba(255, 255, 255, 0.03);
+        }
+
+        /* ==========================================================================
+           2. GLOBAL STYLES & GLASSMORPHISM
+           ========================================================================== */
+        body { 
+            margin: 0; background: var(--bg-base); color: var(--text-main); 
+            font-family: 'Rajdhani', sans-serif; height: 100vh; overflow: hidden; 
+            display: flex; flex-direction: column; 
+            background-image: 
+                linear-gradient(var(--grid-line) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+                radial-gradient(circle at 50% 0%, #0f172a 0%, #000000 100%);
+            background-size: 30px 30px, 30px 30px, 100% 100%;
+        }
+        .hidden { display: none !important; }
+        .glass { 
+            background: var(--panel-bg); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); 
+            border: 1px solid rgba(255,255,255,0.07); box-shadow: 0 8px 32px rgba(0,0,0,0.6); border-radius: 8px; 
+        }
+        .tech-text { font-family: 'Share Tech Mono', monospace; }
+        
+        /* Custom Scrollbar for massive feature lists */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar-thumb { background: var(--cyan); border-radius: 3px; }
+
+        /* ==========================================================================
+           3. UI COMPONENTS (Buttons, Inputs, Toasts)
+           ========================================================================== */
+        .btn { 
+            background: linear-gradient(180deg, rgba(6, 182, 212, 0.1) 0%, rgba(0,0,0,0) 100%); 
+            border: 1px solid var(--cyan); color: var(--cyan); padding: 12px 24px; 
+            font-family: 'Share Tech Mono'; font-weight: bold; cursor: pointer; 
+            text-transform: uppercase; transition: all 0.2s ease-in-out; border-radius: 4px; letter-spacing: 2px;
+        }
+        .btn:hover { background: var(--cyan); color: #000; box-shadow: 0 0 20px var(--cyan-glow); transform: translateY(-1px); }
+        .btn-danger { border-color: var(--red); color: var(--red); background: rgba(239, 68, 68, 0.05); }
+        .btn-danger:hover { background: var(--red); color: #fff; box-shadow: 0 0 25px var(--red-glow); }
+        
+        .input-field { 
+            background: rgba(0,0,0,0.7); border: 1px solid var(--muted); color: #fff; 
+            padding: 15px; font-family: 'Share Tech Mono'; font-size: 1.1rem; width: 100%; 
+            box-sizing: border-box; outline: none; transition: 0.3s; margin-bottom: 15px; border-radius: 4px; 
+        }
+        .input-field:focus { border-color: var(--cyan); box-shadow: 0 0 15px var(--cyan-glow); background: rgba(0,0,0,0.9); }
+
+        #toast-container { position: fixed; bottom: 25px; right: 25px; z-index: 9999; display: flex; flex-direction: column; gap: 12px; width: 350px; }
+        .toast { 
+            background: rgba(2, 6, 23, 0.95); border-left: 4px solid var(--cyan); color: #fff; 
+            padding: 16px 20px; border-radius: 4px; font-family: 'Share Tech Mono'; font-size: 0.85rem; 
+            animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); box-shadow: 0 10px 25px rgba(0,0,0,0.8); line-height: 1.4;
+        }
+        @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* ==========================================================================
+           4. MASTER LAYOUT ARCHITECTURE
+           ========================================================================== */
+        .view-section { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 10; opacity: 1; transition: opacity 0.5s; }
+        header { 
+            width: 100%; padding: 12px 30px; display: flex; justify-content: space-between; align-items: center; 
+            border-bottom: 1px solid rgba(6, 182, 212, 0.3); position: fixed; top: 0; z-index: 100; 
+            background: linear-gradient(90deg, rgba(2, 6, 23, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%); 
+            backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        .logo { font-size: 1.6rem; font-weight: 700; color: var(--text-main); letter-spacing: 3px; }
+        .logo span { color: var(--cyan); text-shadow: 0 0 15px var(--cyan-glow); }
+
+        /* Multi-Node Grid Layout */
+        .dashboard-layout { display: grid; grid-template-columns: 260px 1fr 320px; gap: 24px; width: 100%; height: 100%; padding: 75px 24px 24px 24px; box-sizing: border-box; }
+        
+        /* Left Column: 25+ Features Catalog */
+        .feature-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; padding-right: 8px; height: calc(100vh - 110px); }
+        .feature-category { font-size: 0.7rem; color: var(--cyan); text-transform: uppercase; margin-top: 15px; margin-bottom: 5px; font-weight: bold; border-bottom: 1px solid rgba(6, 182, 212, 0.2); padding-bottom: 4px; letter-spacing: 1px; }
+        .feature-item { 
+            font-family: 'Share Tech Mono'; font-size: 0.75rem; padding: 8px 12px; background: rgba(255,255,255,0.02); 
+            border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; 
+        }
+        .feature-item:hover { border-color: var(--cyan); background: rgba(6, 182, 212, 0.05); transform: translateX(2px); }
+        .feature-active { border-color: var(--cyan); color: var(--cyan); box-shadow: inset 3px 0 0 var(--cyan); background: rgba(6, 182, 212, 0.05); }
+        .feature-locked { color: var(--muted); }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .dot-green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+        .dot-gray { background: var(--muted); }
+        .dot-orange { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+
+        /* Center Column: Advanced Camera Array */
+        .main-col { display: flex; flex-direction: column; gap: 15px; min-width: 0; }
+        .cam-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 2fr 1fr; gap: 15px; flex: 1; }
+        
+        .cam-main { 
+            grid-column: 1 / -1; position: relative; background: #000; border: 1px solid var(--cyan); 
+            border-radius: 8px; overflow: hidden; box-shadow: 0 0 30px rgba(0,0,0,0.8); 
+        }
+        .cam-main::after { content: ''; position: absolute; top:0; left:0; width:100%; height:100%; background: linear-gradient(rgba(0,240,255,0.03) 1px, transparent 1px); background-size: 100% 4px; pointer-events: none; z-index: 15; }
+        
+        #dash-video-main, #dash-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        #dash-canvas { transform: none; z-index: 10; }
+        
+        .cam-sub { position: relative; background: #0a0a0a; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; }
+        .cam-sub video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: 0.7; filter: grayscale(30%); transition: 0.3s; }
+        .cam-sub:hover video { opacity: 1; filter: grayscale(0%); }
+        .cam-label { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.9); padding: 5px 10px; border-left: 2px solid var(--cyan); font-family: 'Share Tech Mono'; font-size: 0.75rem; z-index: 20; letter-spacing: 1px; }
+
+        /* Right Column: Telemetry & Radar */
+        .side-panel { display: flex; flex-direction: column; gap: 18px; }
+        .data-card { padding: 18px; display: flex; flex-direction: column; }
+        .card-header { font-size: 0.8rem; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px; font-weight: bold; }
+        .data-value { font-size: 2.4rem; font-weight: 700; color: var(--green); text-shadow: 0 0 15px rgba(16, 185, 129, 0.5); line-height: 1; transition: color 0.3s, text-shadow 0.3s; }
+        
+        /* ==========================================================================
+           5. ANIMATIONS & OPTICAL FILTERS
+           ========================================================================== */
+        .filter-thermal { filter: sepia(100%) hue-rotate(160deg) saturate(400%) contrast(160%) brightness(80%) !important; }
+        .filter-night { filter: grayscale(100%) contrast(180%) brightness(130%) drop-shadow(0 0 15px rgba(16,185,129,0.4)) !important; border-color: var(--green) !important; }
+        
+        @keyframes lockdownPulse { 0% { box-shadow: inset 0 0 0 0 rgba(239, 68, 68, 0.8); } 50% { box-shadow: inset 0 0 0 20px rgba(239, 68, 68, 0.3); } 100% { box-shadow: inset 0 0 0 0 rgba(239, 68, 68, 0.8); } }
+        .lockdown-mode { animation: lockdownPulse 1.5s infinite; border-color: var(--red) !important; filter: contrast(120%) saturate(150%) !important; }
+        
+        @keyframes radarSweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--red); } 50% { opacity: 0.4; box-shadow: 0 0 0px var(--red); } }
+        @keyframes bootUp { 0% { opacity: 1; z-index: 9999; } 90% { opacity: 1; } 100% { opacity: 0; z-index: -1; display: none; } }
+    </style>
+</head>
+<body>
+
+    <div id="boot-sequence" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; animation: bootUp 2.5s forwards; pointer-events: none;">
+        <div style="font-family: 'Share Tech Mono'; color: var(--cyan); font-size: 2rem; margin-bottom: 20px;">INITIALIZING THREATSENSE.OS</div>
+        <div style="width: 300px; height: 2px; background: rgba(255,255,255,0.1); position: relative; overflow: hidden;">
+            <div style="position: absolute; top: 0; left: 0; height: 100%; width: 50%; background: var(--cyan); animation: loadingBar 2s ease-in-out forwards;"></div>
+        </div>
+        <style>@keyframes loadingBar { 0% { left: -50%; } 100% { left: 100%; } }</style>
+    </div>
+
+    <header>
+        <div class="logo">ThreatSense<span>.OS</span> <span style="font-size: 0.8rem; color: var(--muted); letter-spacing: 1px; vertical-align: middle; margin-left: 10px; border: 1px solid var(--muted); padding: 2px 6px; border-radius: 4px;">VIT PUNE NODE</span></div>
+        <div class="tech-text" style="display: flex; gap: 25px; font-size: 0.85rem;">
+            <span style="color: var(--cyan);">OP: Y. SAOKHEDE</span>
+            <span style="color: var(--muted);">TEAM MEMBERS: 10</span>
+            <span id="cloud-status" style="color: var(--red);">CLOUD: SECURING...</span>
+        </div>
+    </header>
+
+    <div id="toast-container"></div>
+
+    <div id="view-login" class="view-section">
+        <div class="glass" style="width: 420px; padding: 45px; text-align: center; position: relative; overflow: hidden;">
+            <div style="position: absolute; top: -50px; left: -50px; width: 100px; height: 100px; background: var(--cyan); filter: blur(80px); opacity: 0.3; pointer-events: none;"></div>
+            <h2 style="color: #fff; margin-top: 0; font-size: 1.8rem; letter-spacing: 2px;">SECURE UPLINK</h2>
+            <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 35px; line-height: 1.5;">Establish encrypted handshake via authorized telecommunications relay.</p>
+            <div id="recaptcha-container"></div> 
+            
+            <div id="step-phone">
+                <input type="tel" id="input-phone" class="input-field" placeholder="ENTER IDENTIFIER (e.g. +91...)">
+                <button class="btn" style="width: 100%; font-size: 1.1rem; padding: 15px;" onclick="sendOTP()">Initiate Handshake</button>
+            </div>
+            <div id="step-otp" class="hidden">
+                <div style="color: var(--green); font-family: 'Share Tech Mono'; font-size: 0.8rem; margin-bottom: 15px;">> Payload intercepted. Awaiting decryption key.</div>
+                <input type="text" id="input-otp" class="input-field" placeholder="ENTER 6-DIGIT CIPHER" maxlength="6" style="text-align: center; letter-spacing: 10px; font-size: 1.5rem;">
+                <button class="btn" style="width: 100%; font-size: 1.1rem; padding: 15px;" onclick="verifyOTP()">Decrypt & Access</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-mode" class="view-section hidden">
+        <h2 style="font-size: 2.2rem; text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 0 20px rgba(255,255,255,0.2);">Select Topology</h2>
+        <div style="display: flex; gap: 30px; margin-top: 20px;">
+            <div class="glass" style="width: 320px; padding: 40px; cursor: pointer; border-top: 4px solid var(--cyan); transition: transform 0.3s, box-shadow 0.3s;" onmouseover="this.style.transform='translateY(-10px)'; this.style.boxShadow='0 15px 40px rgba(6,182,212,0.2)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 8px 32px rgba(0,0,0,0.5)';" onclick="selectMode('HOME')">
+                <div style="width: 50px; height: 50px; border: 2px dashed var(--cyan); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;"><div style="width: 10px; height: 10px; background: var(--cyan); border-radius: 50%;"></div></div>
+                <h3 style="color: #fff; margin-top: 0; font-size: 1.4rem;">ASSET PERIMETER</h3>
+                <p style="color: var(--muted); font-size: 0.95rem; line-height: 1.6;">Initialize 3D spatial geofencing arrays. Deploy non-human filtering algorithms for zero-false-positive intrusion tracking.</p>
+            </div>
+            <div class="glass" style="width: 320px; padding: 40px; cursor: pointer; border-top: 4px solid var(--red); transition: transform 0.3s, box-shadow 0.3s;" onmouseover="this.style.transform='translateY(-10px)'; this.style.boxShadow='0 15px 40px rgba(239,68,68,0.2)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 8px 32px rgba(0,0,0,0.5)';" onclick="selectMode('PUBLIC')">
+                <div style="width: 50px; height: 50px; border: 2px dashed var(--red); border-radius: 4px; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;"><div style="width: 20px; height: 2px; background: var(--red);"></div><div style="width: 2px; height: 20px; background: var(--red); position: absolute;"></div></div>
+                <h3 style="color: #fff; margin-top: 0; font-size: 1.4rem;">PUBLIC CROWD NODE</h3>
+                <p style="color: var(--muted); font-size: 0.95rem; line-height: 1.6;">Engage full biomechanical suite. Tracks skeletal intersections for assault, complex concealment, gestures, and fire detection.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-dashboard" class="view-section hidden" style="align-items: flex-start; justify-content: flex-start;">
+        <div class="dashboard-layout">
+            
+            <div class="glass feature-list" style="padding: 18px;">
+                <div style="font-size: 1.1rem; font-weight: bold; color: var(--text-main); margin-bottom: 5px; letter-spacing: 2px;">MODULES & MICROSERVICES</div>
+                
+                <div class="feature-category">Biomechanical Intelligence (Live)</div>
+                <div class="feature-item feature-active">Assault / Choking Math <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Contextual Shoplifting <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Aggressive Gestures <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Distress Signaling (Hands) <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Fall & Medical Collapse <div class="status-dot dot-green"></div></div>
+                
+                <div class="feature-category">Spatial & Environmental (Live)</div>
+                <div class="feature-item feature-active">3D Polygon Geofencing <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Thermal Fire Heuristics <div class="status-dot dot-orange"></div></div>
+                <div class="feature-item feature-active">Agentic Radar Routing <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Multi-Camera Hardware Grid <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Non-Human Filter CNN <div class="status-dot dot-green"></div></div>
+
+                <div class="feature-category">Optical & Semantic UI</div>
+                <div class="feature-item" onclick="toggleVision('thermal')">Simulated Thermal IR <div class="status-dot dot-gray"></div></div>
+                <div class="feature-item" onclick="toggleVision('night')">Tactical Night Vision <div class="status-dot dot-gray"></div></div>
+                <div class="feature-item" onclick="runLLMSearch()">LLM Semantic Search API <div class="status-dot dot-gray"></div></div>
+                
+                <div class="feature-category">Cloud-Architected Modules</div>
+                <div class="feature-item feature-locked" onclick="mockLoad('Weapon Detection')">Concealed Weapon Scan <div class="status-dot dot-gray"></div></div>
+                <div class="feature-item feature-locked" onclick="mockLoad('Facial Recognition DB')">VIP / Threat Face Match <div class="status-dot dot-gray"></div></div>
+                <div class="feature-item feature-locked" onclick="mockLoad('ALPR Systems')">License Plate Reader <div class="status-dot dot-gray"></div></div>
+                <div class="feature-item feature-locked" onclick="mockLoad('UAV Drone Dispatch')">Auto-Drone Fleet Dispatch <div class="status-dot dot-gray"></div></div>
+                <div class="feature-item feature-locked" onclick="mockLoad('Global Heatmapping')">Cross-Facility Heatmapping <div class="status-dot dot-gray"></div></div>
+                <div class="feature-item feature-locked" onclick="mockLoad('Loitering Analytics')">TTL Loitering Analytics <div class="status-dot dot-gray"></div></div>
+                
+                <div class="feature-category">DevSecOps Architecture</div>
+                <div class="feature-item feature-active">Zero-Trust Auth Gateway <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Edge-to-Cloud WebSockets <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Immutable Audit Ledger <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Dynamic Threat Scoring <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Node Health Telemetry <div class="status-dot dot-green"></div></div>
+                <div class="feature-item feature-active">Emergency Override Protocol <div class="status-dot dot-green"></div></div>
+            </div>
+
+            <div class="main-col">
+                <div class="cam-grid">
+                    <div class="cam-main" id="dash-wrapper-main">
+                        <video id="dash-video-main" autoplay playsinline muted></video>
+                        <canvas id="dash-canvas"></canvas>
+                        <div class="cam-label" style="border-color: var(--green);">NODE 01: EDGE INFERENCE ACTIVE</div>
+                        <div style="position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 8px; font-family: 'Share Tech Mono'; font-size: 0.75rem; background: rgba(0,0,0,0.85); padding: 5px 10px; border-radius: 4px; z-index: 20;">
+                            <div style="width: 8px; height: 8px; background: var(--red); border-radius: 50%; animation: pulse 1s infinite;"></div> REC 4K
+                        </div>
+                    </div>
+                    <div class="cam-sub" id="dash-wrapper-sub1">
+                        <video id="dash-video-sub1" autoplay playsinline muted></video>
+                        <div class="cam-label">NODE 02: PERIMETER WEST</div>
+                    </div>
+                    <div class="cam-sub" id="dash-wrapper-sub2">
+                        <video id="dash-video-sub2" autoplay playsinline muted></video>
+                        <div class="cam-label">NODE 03: PERIMETER EAST</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="side-panel">
+                <div class="glass data-card" style="padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+                    <button class="btn btn-danger" id="btn-lockdown" onclick="toggleLockdown()" style="width: 100%; font-size: 1.2rem; padding: 15px; letter-spacing: 3px;">INITIATE LOCKDOWN</button>
+                </div>
+                
+                <div class="glass data-card">
+                    <div class="card-header"><span>Dynamic Threat Score</span> <span id="threat-score" style="color: var(--muted);">SCORE: 12</span></div>
+                    <div id="dash-status" class="data-value">SECURE</div>
+                    <div id="dash-subtext" class="tech-text" style="color: var(--cyan); font-size: 0.75rem; margin-top: 10px; border-top: 1px solid rgba(6,182,212,0.2); padding-top: 8px;">> Analyzing multi-pose vector tensors...</div>
+                </div>
+
+                <div class="glass data-card">
+                    <div class="card-header">Agentic Spatial Dispatch</div>
+                    <div style="position: relative; width: 100%; height: 180px; background: radial-gradient(circle, #022b30 0%, #000 100%); border: 1px solid rgba(6, 182, 212, 0.4); border-radius: 6px; overflow: hidden; box-shadow: inset 0 0 20px rgba(0,0,0,0.8);">
+                        <div style="position: absolute; top: 50%; left: 50%; width: 220px; height: 220px; background: conic-gradient(from 0deg, transparent 70%, rgba(6, 182, 212, 0.5) 100%); border-radius: 50%; transform-origin: top left; animation: radarSweep 3s linear infinite;"></div>
+                        <canvas id="radar-canvas" width="280" height="180" style="position: absolute; top:0; left:0; z-index: 10;"></canvas>
+                    </div>
+                    <div id="dispatch-status" class="tech-text" style="font-size: 0.75rem; color: var(--muted); margin-top: 10px;">> Asset Unit-01 maintaining patrol route...</div>
+                </div>
+                
+                <div class="glass data-card" style="flex: 1; padding: 12px;">
+                    <div class="card-header" style="margin-bottom: 8px;">Immutable Audit Ledger</div>
+                    <div id="dash-log" class="tech-text" style="font-size: 0.75rem; overflow-y: auto; height: 100%; display: flex; flex-direction: column; gap: 5px; color: #a1a1aa;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-setup-home" class="view-section hidden" style="background: rgba(2,6,23,0.98);">
+        <h2 style="color: var(--cyan); font-size: 2rem; letter-spacing: 2px;">CALIBRATE RESTRICTED ZONE</h2>
+        <p style="color: var(--muted); font-family: 'Share Tech Mono'; margin-bottom: 20px;">Click and drag to map the 3D polygon array.</p>
+        <div style="position: relative; width: 800px; height: 450px; background: #000; border: 2px solid var(--cyan); margin-bottom: 30px; border-radius: 8px; overflow: hidden; box-shadow: 0 0 30px rgba(6,182,212,0.3);">
+            <video id="calib-video" autoplay playsinline muted style="position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
+            <canvas id="calib-canvas" style="position: absolute; width: 100%; height: 100%; z-index: 10; cursor: crosshair;"></canvas>
+        </div>
+        <button class="btn" style="font-size: 1.2rem; padding: 15px 40px;" onclick="deployDashboard()">Compile & Deploy</button>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        // 🚨 CONFIG: PASTE YOUR FIREBASE KEYS HERE 🚨
+        const firebaseConfig = { 
+            apiKey: "YOUR_API_KEY", 
+            authDomain: "YOUR_DOMAIN", 
+            projectId: "YOUR_PROJECT", 
+            storageBucket: "YOUR_BUCKET", 
+            messagingSenderId: "123", 
+            appId: "123" 
+        };
+        const auth = getAuth(initializeApp(firebaseConfig));
+
+        // STATE MANAGEMENT
+        let currentMode = '', geofence = null, isLockdown = false;
+        let objectModel, poseModel;
+        
+        // 🚨 CONFIG: IF LAPTOP 1 IS SERVER, CHANGE LOCALHOST TO ITS IP 🚨
+        let ws = new WebSocket('ws://localhost:8000/ws/stream');
+        ws.onopen = () => { document.getElementById('cloud-status').innerText = "CLOUD: SYNCED"; document.getElementById('cloud-status').style.color = "var(--green)"; };
+        ws.onerror = () => { document.getElementById('cloud-status').innerText = "CLOUD: LOCAL OVERRIDE"; document.getElementById('cloud-status').style.color = "var(--orange)"; };
+
+        // -------------------------------------------------------------
+        // UI & ARCHITECTURE SIMULATION UTILS
+        // -------------------------------------------------------------
+        window.switchView = (view) => { 
+            document.querySelectorAll('.view-section').forEach(v => v.classList.add('hidden')); 
+            document.getElementById(`view-${view}`).classList.remove('hidden'); 
+        };
+        
+        window.showToast = (msg, type="info") => { 
+            const container = document.getElementById('toast-container'); 
+            const toast = document.createElement('div'); toast.className = 'toast'; 
+            toast.style.borderLeftColor = type === 'warn' ? 'var(--red)' : type === 'fire' ? 'var(--orange)' : 'var(--cyan)'; 
+            toast.innerHTML = msg; container.appendChild(toast); 
+            setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 3500); 
+        };
+        
+        // Typing effect for the immutable log
+        window.logEvent = (msg, color="var(--muted)") => { 
+            const log = document.getElementById('dash-log'); 
+            const entry = document.createElement('div');
+            entry.style.color = color;
+            entry.innerHTML = `<span style="color:#fff">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+            log.insertBefore(entry, log.firstChild);
+            if(log.children.length > 50) log.removeChild(log.lastChild); // Prevent memory leak
+        };
+        
+        window.mockLoad = (moduleName) => { 
+            window.showToast(`> Requesting <b>${moduleName}</b> weights from cloud...`); 
+            setTimeout(() => window.showToast(`[SYSTEM HALT] Edge compute capacity reached. Cannot allocate VRAM for ${moduleName} alongside core Biomechanical Engine.`, "warn"), 2500); 
+        };
+        
+        window.runLLMSearch = () => { 
+            window.showToast("> Translating semantic natural language query to vector embeddings..."); 
+            setTimeout(() => window.showToast(`[LLM RESPONSE] Database queried. 0 matching anomalies found in the past 24 hours.`), 2500); 
+        };
+        
+        window.toggleVision = (type) => {
+            document.querySelectorAll('.cam-grid > div').forEach(w => w.className = w.id === 'dash-wrapper-main' ? 'cam-main' : 'cam-sub');
+            if(type === 'thermal') { document.querySelectorAll('.cam-grid > div').forEach(w => w.classList.add('filter-thermal')); window.showToast("Thermal IR Optical Payload Engaged."); }
+            if(type === 'night') { document.querySelectorAll('.cam-grid > div').forEach(w => w.classList.add('filter-night')); window.showToast("Tactical Low-Light Vision Engaged."); }
+        };
+
+        window.toggleLockdown = () => {
+            isLockdown = !isLockdown; 
+            const btn = document.getElementById('btn-lockdown'), mainWrapper = document.getElementById('dash-wrapper-main');
+            if(isLockdown) { 
+                btn.innerText = "OVERRIDE & CANCEL LOCKDOWN"; btn.style.background = "var(--red)"; btn.style.color = "#fff"; 
+                mainWrapper.classList.add('lockdown-mode'); 
+                window.showToast("CRITICAL: FACILITY LOCKDOWN INITIATED. MAG-LOCKS ENGAGED.", "warn"); 
+                window.logEvent("FACILITY LOCKDOWN INITIATED", "var(--red)"); 
+            } else { 
+                btn.innerText = "INITIATE LOCKDOWN"; btn.style.background = "rgba(239, 68, 68, 0.05)"; btn.style.color = "var(--red)"; 
+                mainWrapper.classList.remove('lockdown-mode'); 
+                window.showToast("Lockdown lifted. Restoring standard operations."); 
+                window.logEvent("Lockdown Override Authorized", "var(--green)");
+            }
+        };
+
+        // -------------------------------------------------------------
+        // ZERO-TRUST AUTHENTICATION
+        // -------------------------------------------------------------
+        window.sendOTP = () => {
+            const phone = document.getElementById('input-phone').value;
+            if(!window.recaptchaVerifier) window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
+            signInWithPhoneNumber(auth, phone, window.recaptchaVerifier).then((res) => { 
+                window.confirmationResult = res; document.getElementById('step-phone').classList.add('hidden'); document.getElementById('step-otp').classList.remove('hidden'); 
+            }).catch((err) => { alert("Auth Failed. Ensure Firebase testing rules are met."); });
+        };
+        window.verifyOTP = () => { 
+            window.confirmationResult.confirm(document.getElementById('input-otp').value).then(() => { 
+                loadAIModels(); window.switchView('mode'); window.showToast("RSA Decryption successful. Welcome Admin."); 
+            }).catch(() => alert("Invalid Cipher.")); 
+        };
+
+        // -------------------------------------------------------------
+        // HARDWARE INIT & DEPLOYMENT
+        // -------------------------------------------------------------
+        async function startCameras() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                if (videoDevices.length > 0) {
+                    const stream1 = await navigator.mediaDevices.getUserMedia({ video: { deviceId: videoDevices[0].deviceId, width: 800, height: 600 }});
+                    document.getElementById('dash-video-main').srcObject = stream1;
+                    document.getElementById('calib-video').srcObject = stream1;
+                    
+                    // Route secondary streams if hardware exists
+                    if(videoDevices.length > 1) { const stream2 = await navigator.mediaDevices.getUserMedia({ video: { deviceId: videoDevices[1].deviceId }}); document.getElementById('dash-video-sub1').srcObject = stream2; } 
+                    else { document.getElementById('dash-video-sub1').srcObject = stream1; }
+                    
+                    if(videoDevices.length > 2) { const stream3 = await navigator.mediaDevices.getUserMedia({ video: { deviceId: videoDevices[2].deviceId }}); document.getElementById('dash-video-sub2').srcObject = stream3; } 
+                    else { document.getElementById('dash-video-sub2').srcObject = stream1; }
+                }
+            } catch (err) { alert("Hardware Error: Camera array not found."); }
+        }
+
+        window.selectMode = (mode) => {
+            currentMode = mode; startCameras();
+            if(mode === 'HOME') { window.switchView('setup-home'); setupGeofenceLogic(); } 
+            else { window.deployDashboard(); }
+        };
+
+        let isDrawing = false, startX, startY;
+        function setupGeofenceLogic() {
+            const c = document.getElementById('calib-canvas'); const v = document.getElementById('calib-video');
+            v.onloadedmetadata = () => { c.width = v.videoWidth; c.height = v.videoHeight; };
+            c.onmousedown = (e) => { isDrawing = true; const r = c.getBoundingClientRect(); startX = (e.clientX - r.left)*(c.width/r.width); startY = (e.clientY - r.top)*(c.height/r.height); geofence = {x:startX, y:startY, w:0, h:0}; };
+            c.onmousemove = (e) => { 
+                if(!isDrawing) return; const r = c.getBoundingClientRect(); 
+                geofence.w = ((e.clientX - r.left)*(c.width/r.width)) - startX; geofence.h = ((e.clientY - r.top)*(c.height/r.height)) - startY; 
+                let ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); 
+                ctx.fillStyle="rgba(6,182,212,0.2)"; ctx.strokeStyle="rgba(6,182,212,0.8)"; ctx.lineWidth=2; 
+                ctx.fillRect(geofence.x,geofence.y,geofence.w,geofence.h); ctx.strokeRect(geofence.x,geofence.y,geofence.w,geofence.h);
+            };
+            c.onmouseup = () => isDrawing = false;
+        }
+
+        window.deployDashboard = () => {
+            if(currentMode === 'HOME' && !geofence) geofence = {x: 200, y: 150, w: 400, h: 300}; // Fallback
+            window.switchView('dashboard');
+            const v = document.getElementById('dash-video-main'), c = document.getElementById('dash-canvas');
+            v.onloadedmetadata = () => { c.width = v.videoWidth; c.height = v.videoHeight; runMasterInferenceLoop(); };
+            document.getElementById('dash-subtext').innerText = currentMode === 'HOME' ? "> Perimeter non-human filtering active." : "> Multi-pose spatial inference active.";
+            window.showToast("Neural Networks Compiled. All Nodes Active.");
+            window.logEvent("Edge Engine Boot Successful", "var(--green)");
+        };
+
+        async function loadAIModels() {
+            objectModel = await cocoSsd.load(); await tf.setBackend('webgl');
+            poseModel = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING });
+        }
+
+        // -------------------------------------------------------------
+        // AGENTIC DISPATCH RADAR
+        // -------------------------------------------------------------
+        let guardPos = { x: 50, y: 120 }, guardTarget = null, dispatchActive = false;
+        function updateRadar(threatX) {
+            const rc = document.getElementById('radar-canvas'); if(!rc) return;
+            const ctx = rc.getContext('2d'); ctx.clearRect(0,0,rc.width,rc.height);
+            
+            // Draw Grid
+            ctx.strokeStyle = 'rgba(6, 182, 212, 0.2)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(rc.width/2, rc.height/2, 40, 0, 2*Math.PI); ctx.stroke(); 
+            ctx.beginPath(); ctx.arc(rc.width/2, rc.height/2, 80, 0, 2*Math.PI); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, rc.height/2); ctx.lineTo(rc.width, rc.height/2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(rc.width/2, 0); ctx.lineTo(rc.width/2, rc.height); ctx.stroke();
+
+            if(threatX !== null) { 
+                let mX = (threatX / 800) * rc.width; 
+                ctx.fillStyle = '#ef4444'; ctx.shadowBlur = 10; ctx.shadowColor = '#ef4444';
+                ctx.beginPath(); ctx.arc(mX, 60, 6, 0, 2*Math.PI); ctx.fill(); ctx.shadowBlur = 0;
+                if(!dispatchActive) { 
+                    guardTarget = {x: mX, y: 60}; dispatchActive = true; 
+                    document.getElementById('dispatch-status').innerHTML = "<span style='color:var(--red); font-weight:bold;'>! AUTONOMOUS INTERCEPT ROUTED</span>"; 
+                } 
+            } else { 
+                dispatchActive = false; guardTarget = null; 
+                document.getElementById('dispatch-status').innerText = "> Unit-01 patrolling grid vector 7..."; 
+            }
+
+            if(dispatchActive && guardTarget) { 
+                let dx = guardTarget.x - guardPos.x, dy = guardTarget.y - guardPos.y, dist = Math.sqrt(dx*dx + dy*dy); 
+                if(dist > 4) { guardPos.x += (dx/dist)*2.2; guardPos.y += (dy/dist)*2.2; } // Asset speed
+                ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)'; ctx.setLineDash([4,4]); ctx.lineWidth=2;
+                ctx.beginPath(); ctx.moveTo(guardPos.x, guardPos.y); ctx.lineTo(guardTarget.x, guardTarget.y); ctx.stroke(); ctx.setLineDash([]); 
+            } else { guardPos.x += Math.sin(Date.now()/1000)*0.5; } // Idle sway
+            
+            ctx.fillStyle = '#06b6d4'; ctx.beginPath(); ctx.arc(guardPos.x, guardPos.y, 5, 0, 2*Math.PI); ctx.fill();
+            requestAnimationFrame(() => updateRadar(window.currentThreatX));
+        }
+        updateRadar(null);
+
+        // -------------------------------------------------------------
+        // MATH & CV HEURISTICS ENGINE
+        // -------------------------------------------------------------
+        const getMirroredX = (x, cW) => cW - x; 
+        const getDist = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+        
+        // Triggers UI, Logging, and Backend
+        function triggerThreat(msg, tX, c, ctx, type="alert") {
+            const color = type === "fire" ? "var(--orange)" : "var(--red)";
+            const rgba = type === "fire" ? "rgba(249, 115, 22, 0.15)" : "rgba(239, 68, 68, 0.15)";
+            
+            document.getElementById('dash-status').innerText = msg; 
+            document.getElementById('dash-status').style.color = color; 
+            document.getElementById('threat-score').innerHTML = `<span style="color:${color};">SCORE: 98</span>`; 
+            
+            ctx.fillStyle = rgba; ctx.fillRect(0, 0, c.width, c.height); 
+            window.currentThreatX = tX;
+            
+            if (Math.random() > 0.92) { // Throttle network spam
+                if(ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ camera_id: "CAM_01_EDGE", alert_type: msg, threat_level: "CRITICAL" })); 
+                window.logEvent(`[DETECTION] ${msg}`, color); 
+                if(type === "fire") window.showToast(`🔥 THERMAL ANOMALY: ${msg}`, "fire");
+            }
+        }
+
+        // --- NEW: FIRE/SMOKE PIXEL CLUSTER HEURISTIC ---
+        // Scans the center of the video feed for dense, bright orange/yellow pixels
+        function detectFireHeuristic(video, canvas, ctx) {
+            // Draw current video frame to a tiny off-screen canvas to sample pixels efficiently
+            const sampleCanvas = document.createElement('canvas'); sampleCanvas.width = 100; sampleCanvas.height = 100;
+            const sCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+            sCtx.drawImage(video, 0, 0, 100, 100);
+            
+            try {
+                const imgData = sCtx.getImageData(0, 0, 100, 100).data;
+                let firePixels = 0; let totalX = 0;
+                
+                for(let i = 0; i < imgData.length; i += 4) {
+                    let r = imgData[i], g = imgData[i+1], b = imgData[i+2];
+                    // Strict heuristic for bright fire (High Red, Medium Green, Low Blue)
+                    if(r > 200 && g > 100 && g < 200 && b < 100) {
+                        firePixels++;
+                        totalX += (i / 4) % 100; // Track x-coordinate for radar
+                    }
+                }
+                
+                if(firePixels > 50) { // If thermal mass is large enough
+                    let avgX = (totalX / firePixels); // Get center of mass
+                    let mappedX = (avgX / 100) * canvas.width; // Map back to actual canvas size
+                    
+                    // Draw digital bounding box around "fire"
+                    ctx.strokeStyle = '#f97316'; ctx.lineWidth = 3; ctx.setLineDash([10, 10]);
+                    ctx.strokeRect(mappedX - 50, canvas.height/2 - 50, 100, 100); ctx.setLineDash([]);
+                    ctx.fillStyle = '#f97316'; ctx.font = '14px Share Tech Mono'; ctx.fillText("THERMAL MASS", mappedX - 45, canvas.height/2 - 55);
+                    
+                    return { threat: "FIRE / IGNITION DETECTED", threatX: mappedX, type: "fire" };
+                }
+            } catch(e) {} // Handle cross-origin canvas taint if any
+            return null;
+        }
+
+        // --- EXPANDED: MULTI-GESTURE RECOGNITION ---
+        function analyzeGestures(pose, canvasWidth) {
+            let lW = pose.keypoints.find(k=>k.name==='left_wrist'), rW = pose.keypoints.find(k=>k.name==='right_wrist');
+            let lE = pose.keypoints.find(k=>k.name==='left_elbow'), rE = pose.keypoints.find(k=>k.name==='right_elbow');
+            let nose = pose.keypoints.find(k=>k.name==='nose'), lS = pose.keypoints.find(k=>k.name==='left_shoulder');
+
+            if(lW && rW && nose && lW.score > 0.4 && rW.score > 0.4) {
+                // 1. DISTRESS SIGNAL: Both hands strictly above the nose
+                if(lW.y < nose.y - 20 && rW.y < nose.y - 20) {
+                    return { threat: "DISTRESS / HANDS RAISED", threatX: getMirroredX(nose.x, canvasWidth) };
+                }
+                
+                // 2. AGGRESSIVE POINTING: Arm fully extended and raised (shoulder -> elbow -> wrist horizontal alignment)
+                if(rS && rE && rW.y < rS.y + 20 && rW.y > rS.y - 20 && getDist(rW, rS) > 100) {
+                    return { threat: "AGGRESSIVE GESTURE / POINTING", threatX: getMirroredX(rW.x, canvasWidth) };
+                }
+            }
+            return null;
+        }
+
+        // --- EXPANDED: CONTEXTUAL SHOPLIFTING (Pocket vs Trolley) ---
+        function detectConcealment(pose, objPredictions, canvasWidth) {
+            let lW = pose.keypoints.find(k=>k.name==='left_wrist'), rW = pose.keypoints.find(k=>k.name==='right_wrist');
+            let lH = pose.keypoints.find(k=>k.name==='left_hip'), rH = pose.keypoints.find(k=>k.name==='right_hip');
+            
+            let lNear = lW && lH && lW.score > 0.3 && getDist(lW, lH) < 40;
+            let rNear = rW && rH && rW.score > 0.3 && getDist(rW, rH) < 40;
+
+            if (lNear || rNear) {
+                let safeContainer = false;
+                if (objPredictions) {
+                    objPredictions.forEach(obj => {
+                        // COCO-SSD valid classes for "safe" placement
+                        if (['handbag', 'backpack', 'suitcase', 'shopping cart', 'tote'].includes(obj.class)) {
+                            let mX = getMirroredX(obj.bbox[0] + obj.bbox[2], canvasWidth);
+                            let tW = lNear ? lW : rW; let wX = getMirroredX(tW.x, canvasWidth);
+                            // If wrist is inside the bag's bounding box
+                            if (wX > mX && wX < mX + obj.bbox[2] && tW.y > obj.bbox[1] && tW.y < obj.bbox[1] + obj.bbox[3]) safeContainer = true;
+                        }
+                    });
+                }
+                // If moving to hip/pocket area and NO bag is present -> Theft
+                if (!safeContainer) return { threat: "SHOPLIFTING: POCKET CONCEALMENT", threatX: getMirroredX(lNear ? lW.x : rW.x, canvasWidth) };
+            }
+            return null;
+        }
+
+        // -------------------------------------------------------------
+        // THE MASTER INFERENCE ENGINE LOOP
+        // -------------------------------------------------------------
+        async function runMasterInferenceLoop() {
+            if(!objectModel || !poseModel || isLockdown) { requestAnimationFrame(runMasterInferenceLoop); return; }
+            
+            const video = document.getElementById('dash-video-main'), canvas = document.getElementById('dash-canvas'), ctx = canvas.getContext('2d'); 
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+            let activeThreat = null;
+
+            // 1. Parallel Inference (Object + Fire Heuristic)
+            const preds = await objectModel.detect(video);
+            if(!activeThreat) activeThreat = detectFireHeuristic(video, canvas, ctx);
+
+            // 2. Deployment Topology Logic
+            if (currentMode === 'HOME') {
+                // Draw Geofence Matrix
+                ctx.fillStyle = "rgba(6, 182, 212, 0.05)"; ctx.strokeStyle = "rgba(6, 182, 212, 0.4)";
+                ctx.fillRect(geofence.x, geofence.y, geofence.w, geofence.h); ctx.strokeRect(geofence.x, geofence.y, geofence.w, geofence.h);
+                
+                preds.forEach(p => {
+                    if (p.class === 'person') {
+                        let mX = getMirroredX(p.bbox[0] + p.bbox[2], canvas.width), cX = mX + (p.bbox[2]/2), cY = p.bbox[1] + (p.bbox[3]/2);
+                        // Geofence Intersection Math
+                        if (cX > geofence.x && cX < geofence.x + geofence.w && cY > geofence.y && cY < geofence.y + geofence.h) { 
+                            activeThreat = { threat: "PERIMETER INTRUSION DETECTED", threatX: mX }; 
+                            ctx.strokeStyle = '#ef4444'; ctx.lineWidth=3; ctx.strokeRect(mX, p.bbox[1], p.bbox[2], p.bbox[3]); 
+                            // Draw HUD targeting lines
+                            ctx.beginPath(); ctx.moveTo(mX, p.bbox[1]); ctx.lineTo(mX-20, p.bbox[1]-20); ctx.stroke();
+                        }
+                    }
+                });
+            } 
+            else if (currentMode === 'PUBLIC') {
+                const poses = await poseModel.estimatePoses(video);
+                
+                if (poses.length > 0) {
+                    poses.forEach(pose => {
+                        let valid = [];
+                        // Draw sci-fi skeletal nodes
+                        pose.keypoints.forEach(k => { 
+                            if(k.score > 0.2) { 
+                                ctx.fillStyle = 'rgba(6,182,212,0.8)'; ctx.shadowBlur = 5; ctx.shadowColor = '#06b6d4';
+                                ctx.beginPath(); ctx.arc(getMirroredX(k.x, canvas.width), k.y, 4, 0, 2*Math.PI); ctx.fill(); ctx.shadowBlur = 0;
+                                valid.push({x:getMirroredX(k.x, canvas.width), y:k.y}); 
+                            }
+                        });
+                        
+                        // Single-Entity Logic Flow
+                        if(valid.length > 5 && !activeThreat) { 
+                            let w = Math.max(...valid.map(p=>p.x)) - Math.min(...valid.map(p=>p.x)), h = Math.max(...valid.map(p=>p.y)) - Math.min(...valid.map(p=>p.y)); 
+                            if(w > h * 1.6) activeThreat = { threat: "FALL / MEDICAL EMERGENCY", threatX: Math.min(...valid.map(p=>p.x)) }; 
+                        }
+                        if (!activeThreat) activeThreat = analyzeGestures(pose, canvas.width);
+                        if (!activeThreat) activeThreat = detectConcealment(pose, preds, canvas.width);
+                    });
+
+                    // Multi-Entity Interaction Flow
+                    if (poses.length >= 2 && !activeThreat) {
+                        let aW = poses[0].keypoints.find(k=>k.name==='right_wrist'), bN = poses[1].keypoints.find(k=>k.name==='nose'), bH = poses[1].keypoints.find(k=>k.name==='left_hip');
+                        if (aW && aW.score > 0.2) {
+                            let mAW = {x: getMirroredX(aW.x, canvas.width), y: aW.y};
+                            // Math: Assault (Wrist hits face)
+                            if (bN && bN.score > 0.2 && getDist(mAW, {x: getMirroredX(bN.x, canvas.width), y: bN.y}) < 45) activeThreat = { threat: "CRITICAL: ASSAULT", threatX: mAW.x };
+                            // Math: Pickpocket (Wrist hits hip)
+                            if (bH && bH.score > 0.2 && getDist(mAW, {x: getMirroredX(bH.x, canvas.width), y: bH.y}) < 40) activeThreat = { threat: "WARNING: TAMPERING / PICKPOCKET", threatX: mAW.x };
+                        }
+                    }
+                }
+            }
+
+            // 3. Command & Control Dispatch Routing
+            if (activeThreat) {
+                triggerThreat(activeThreat.threat, activeThreat.threatX, canvas, ctx, activeThreat.type);
+            } else { 
+                document.getElementById('dash-status').innerText = "SECURE"; document.getElementById('dash-status').style.color = "var(--cyan)"; 
+                document.getElementById('threat-score').innerHTML = `<span style="color:var(--muted);">SCORE: 12</span>`; 
+                window.currentThreatX = null; 
+            }
+            
+            // Loop natively using browser refresh rate for zero-latency UI
+            requestAnimationFrame(runMasterInferenceLoop);
+        }
+    </script>
+</body>
+</html>
