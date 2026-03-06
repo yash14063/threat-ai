@@ -1,9 +1,127 @@
-<script type="module">
-        const CONFIG = { REQUIRED_DELAY_MS: 10000 }; 
-        let currentMode = '', geofence = null, objectModel, poseModel, isContainment = false;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrinetraAi.OS | Enterprise Command</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
+    <style>
+        :root { --bg-base: #020617; --cyan: #06b6d4; --red: #ef4444; --orange: #f97316; --green: #10b981; --muted: #64748b; }
+        body { margin: 0; background: var(--bg-base); color: #fff; font-family: 'Rajdhani', sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; background-image: radial-gradient(circle at 50% 0%, #0f172a 0%, #000000 100%); }
+        .hidden { display: none !important; }
+        .glass { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
         
-        // The new "Lock-On" Timer
-        let activeTimer = null; 
+        .btn { background: rgba(6, 182, 212, 0.1); border: 1px solid var(--cyan); color: var(--cyan); padding: 12px 24px; font-family: 'Share Tech Mono'; font-weight: bold; cursor: pointer; text-transform: uppercase; border-radius: 4px; transition: 0.3s; }
+        .btn:hover { background: var(--cyan); color: #000; box-shadow: 0 0 15px var(--cyan); }
+        .input-field { background: rgba(0,0,0,0.7); border: 1px solid var(--muted); color: #fff; padding: 15px; font-family: 'Share Tech Mono'; width: 100%; box-sizing: border-box; margin-bottom: 15px; border-radius: 4px; text-align: center; font-size: 1.2rem; }
+        
+        .view-section { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 10; }
+        header { width: 100%; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(6, 182, 212, 0.3); position: fixed; top: 0; z-index: 100; background: rgba(2, 6, 23, 0.95); box-sizing: border-box; }
+        .logo { font-size: 1.8rem; font-weight: 700; letter-spacing: 3px; } .logo span { color: var(--cyan); }
+
+        .dashboard-layout { display: grid; grid-template-columns: 260px 1fr 320px; gap: 24px; width: 100%; height: 100%; padding: 80px 24px 24px 24px; box-sizing: border-box; }
+        
+        .feature-list { display: flex; flex-direction: column; gap: 8px; padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; }
+        .feature-item { font-family: 'Share Tech Mono'; font-size: 0.8rem; padding: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .feature-active { border-color: var(--cyan); color: var(--cyan); border-left: 4px solid var(--cyan); }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+        
+        .cam-main { position: relative; background: #000; border: 2px solid var(--cyan); border-radius: 8px; overflow: hidden; height: 100%; }
+        #dash-video-main, #dash-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: fill; transform: scaleX(-1); } 
+        #dash-canvas { transform: scaleX(-1); z-index: 10; }
+        
+        .side-panel { display: flex; flex-direction: column; gap: 20px; }
+        .data-card { padding: 20px; display: flex; flex-direction: column; }
+        .data-value { font-size: 2rem; font-weight: 700; color: var(--green); text-shadow: 0 0 15px rgba(16, 185, 129, 0.5); line-height: 1.2; font-family: 'Share Tech Mono'; }
+        
+        @keyframes pulseAlert { 0%, 100% { box-shadow: inset 0 0 0 0 rgba(239, 68, 68, 0.8); } 50% { box-shadow: inset 0 0 0 20px rgba(239, 68, 68, 0.3); } }
+        .alert-mode { animation: pulseAlert 1s infinite; border-color: var(--red) !important; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">TrinetraAi<span>.OS</span></div>
+        <div style="font-family: 'Share Tech Mono'; color: var(--cyan);">10-SECOND PERSISTENCE ENGINE ACTIVE</div>
+    </header>
+
+    <div id="view-login" class="view-section">
+        <div class="glass" style="width: 400px; padding: 40px; text-align: center;">
+            <h2 style="color: #fff; margin-top: 0; font-size: 1.8rem; letter-spacing: 2px;">SECURE UPLINK</h2>
+            <input type="text" id="input-phone" class="input-field" placeholder="ENTER ADMIN CIPHER">
+            <button class="btn" style="width: 100%;" onclick="verifyOTP()">Decrypt & Access</button>
+        </div>
+    </div>
+
+    <div id="view-mode" class="view-section hidden">
+        <h2 style="font-size: 2.2rem; text-transform: uppercase; letter-spacing: 3px;">Select Deployment Topology</h2>
+        <div style="display: flex; gap: 30px; margin-top: 20px;">
+            <div class="glass" style="width: 320px; padding: 40px; cursor: pointer; border-top: 4px solid var(--cyan); text-align: center;" onclick="selectMode('HOME')">
+                <h3 style="color: var(--cyan); font-size: 1.5rem;">HOME / PERIMETER</h3>
+                <p style="color: var(--muted); font-size: 1rem;">Action 1: Geofence Intruder Counting with 10s Delay.</p>
+            </div>
+            <div class="glass" style="width: 320px; padding: 40px; cursor: pointer; border-top: 4px solid var(--red); text-align: center;" onclick="selectMode('PUBLIC')">
+                <h3 style="color: var(--red); font-size: 1.5rem;">CROWD / RALLY</h3>
+                <p style="color: var(--muted); font-size: 1rem;">Actions 2-5: Gestures, Assault, & Theft with 10s Delay.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-setup-home" class="view-section hidden" style="background: rgba(2,6,23,0.98);">
+        <h2 style="color: var(--cyan); font-size: 2rem;">DRAW RESTRICTED ZONE</h2>
+        <div style="position: relative; width: 800px; height: 450px; background: #000; border: 2px solid var(--cyan); margin-bottom: 30px; border-radius: 8px;">
+            <video id="calib-video" autoplay playsinline muted style="position: absolute; width: 100%; height: 100%; object-fit: fill; transform: scaleX(-1);"></video>
+            <canvas id="calib-canvas" style="position: absolute; width: 100%; height: 100%; z-index: 10; cursor: crosshair; transform: scaleX(-1);"></canvas>
+        </div>
+        <button class="btn" style="font-size: 1.2rem; padding: 15px 40px;" onclick="deployDashboard()">Compile & Deploy</button>
+    </div>
+
+    <div id="view-dashboard" class="view-section hidden" style="align-items: flex-start; justify-content: flex-start;">
+        <div class="dashboard-layout">
+            
+            <div class="glass feature-list">
+                <div style="font-size: 1.2rem; font-weight: bold; color: var(--cyan); margin-bottom: 10px;">THE 5 DEMO ACTIONS</div>
+                <div class="feature-item feature-active">1. Geofence Perimeter <div class="status-dot"></div></div>
+                <div class="feature-item feature-active">2. Distress (Hands Up) <div class="status-dot"></div></div>
+                <div class="feature-item feature-active">3. Weapon Pointing <div class="status-dot"></div></div>
+                <div class="feature-item feature-active">4. Assault (Wrist to Neck) <div class="status-dot"></div></div>
+                <div class="feature-item feature-active">5. Pickpocket (Wrist to Hip) <div class="status-dot"></div></div>
+                
+                <div style="font-size: 0.8rem; color: var(--muted); margin-top: 20px;">* All features require a sustained 10-second verification to trigger the final alarm.</div>
+            </div>
+
+            <div class="cam-main" id="dash-wrapper-main">
+                <video id="dash-video-main" autoplay playsinline muted></video>
+                <canvas id="dash-canvas"></canvas>
+            </div>
+
+            <div class="side-panel">
+                <div class="glass data-card" style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: var(--muted); margin-bottom: 10px;">LIVE SYSTEM STATUS</div>
+                    <div id="dash-status" class="data-value">SYSTEM SECURE</div>
+                </div>
+                
+                <div class="glass data-card" style="flex: 1;">
+                    <div style="font-size: 0.9rem; color: var(--muted); margin-bottom: 10px; text-transform: uppercase;">Audit Ledger</div>
+                    <div id="dash-log" style="font-family: 'Share Tech Mono'; font-size: 0.8rem; color: #a1a1aa; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const CONFIG = { REQUIRED_DELAY_MS: 10000 }; // 10 SECONDS EXACTLY
+        let currentMode = '', geofence = null, objectModel, poseModel;
+        
+        // Timer Variables
+        let pendingThreat = null;
+        let threatAccumulator = 0; // The actual 10-second progress bar value
+        let lastFrameTime = Date.now();
         let lastNotificationTime = 0;
 
         // Voice AI
@@ -11,7 +129,7 @@
         let lastSpeechTime = 0;
         function speakAlert(message) {
             const now = Date.now();
-            if (synth && !synth.speaking && (now - lastSpeechTime > 6000)) {
+            if (synth && !synth.speaking && (now - lastSpeechTime > 5000)) {
                 let cleanMsg = message.replace(/[^a-zA-Z0-9 ]/g, " ");
                 const utterance = new SpeechSynthesisUtterance("Alert. " + cleanMsg);
                 utterance.rate = 1.1; utterance.pitch = 0.9; synth.speak(utterance); lastSpeechTime = now;
@@ -25,18 +143,15 @@
         // UI Utils
         window.switchView = (view) => { document.querySelectorAll('.view-section').forEach(v => v.classList.add('hidden')); document.getElementById(`view-${view}`).classList.remove('hidden'); };
         window.logEvent = (msg, color="var(--muted)") => { const log = document.getElementById('dash-log'); const entry = document.createElement('div'); entry.style.color = color; entry.innerHTML = `<span style="color:#fff">[${new Date().toLocaleTimeString()}]</span> ${msg}`; log.insertBefore(entry, log.firstChild); };
+        
+        // Bypass Login
         window.verifyOTP = () => { loadAIModels(); window.switchView('mode'); };
-
-        window.toggleContainment = () => {
-            isContainment = !isContainment; const btn = document.getElementById('btn-containment'), mainWrapper = document.getElementById('dash-wrapper-main');
-            if(isContainment) { btn.innerText = "OVERRIDE CONTAINMENT"; btn.style.background = "var(--red)"; btn.style.color = "#fff"; mainWrapper.classList.add('containment-mode'); window.logEvent("CONTAINMENT ENGAGED", "var(--red)"); speakAlert("Critical. Containment Protocol Initiated."); } 
-            else { btn.innerText = "INITIATE CONTAINMENT"; btn.style.background = "rgba(239, 68, 68, 0.05)"; btn.style.color = "var(--red)"; mainWrapper.classList.remove('containment-mode'); window.logEvent("Containment Lifted", "var(--green)"); speakAlert("Containment override authorized."); }
-        };
 
         async function startCameras() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 800, height: 600 }});
-                document.getElementById('dash-video-main').srcObject = stream; document.getElementById('calib-video').srcObject = stream;
+                document.getElementById('dash-video-main').srcObject = stream;
+                document.getElementById('calib-video').srcObject = stream;
             } catch (err) { alert("Camera not found."); }
         }
 
@@ -62,6 +177,7 @@
             const v = document.getElementById('dash-video-main'), c = document.getElementById('dash-canvas');
             const startEngine = () => { c.width = v.videoWidth; c.height = v.videoHeight; runMasterInferenceLoop(); };
             if (v.readyState >= 2) startEngine(); else v.onloadedmetadata = startEngine;
+            window.logEvent("Engine Started", "var(--cyan)");
         };
 
         async function loadAIModels() { await tf.setBackend('webgl'); objectModel = await cocoSsd.load(); poseModel = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, { modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING }); }
@@ -69,51 +185,24 @@
         const getMirroredX = (x, cW) => cW - x; const getDist = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 
         function triggerFinalAlarm(msg, ctx, canvas) {
-            document.getElementById('dash-status').innerText = "THREAT CONFIRMED"; 
+            document.getElementById('dash-status').innerText = msg; 
             document.getElementById('dash-status').style.color = "var(--red)"; 
             document.getElementById('dash-wrapper-main').classList.add('alert-mode');
-            ctx.fillStyle = "rgba(239, 68, 68, 0.3)"; ctx.fillRect(0, 0, canvas.width, canvas.height); 
+            ctx.fillStyle = "rgba(239, 68, 68, 0.2)"; ctx.fillRect(0, 0, canvas.width, canvas.height); 
             speakAlert(msg);
-            sendOSNotification("Critical Threat", msg);
+            sendOSNotification("Critical Threat Detected", msg);
             window.logEvent(`[ALARM] ${msg}`, "var(--red)");
             
-            // Auto reset the alarm after 6 seconds so you can do the next demo action
-            setTimeout(() => { document.getElementById('dash-wrapper-main').classList.remove('alert-mode'); activeTimer = null; }, 6000);
+            // Auto reset the alarm after 5 seconds so you can do the next action
+            setTimeout(() => { document.getElementById('dash-wrapper-main').classList.remove('alert-mode'); }, 5000);
         }
 
         async function runMasterInferenceLoop() {
             if(!objectModel || !poseModel) { document.getElementById('dash-status').innerText = "DOWNLOADING AI..."; document.getElementById('dash-status').style.color = "var(--orange)"; requestAnimationFrame(runMasterInferenceLoop); return; }
-            if(isContainment) { requestAnimationFrame(runMasterInferenceLoop); return; }
             
             const video = document.getElementById('dash-video-main'), canvas = document.getElementById('dash-canvas'), ctx = canvas.getContext('2d'); 
             ctx.clearRect(0, 0, canvas.width, canvas.height); 
             
-            // ==========================================================
-            // THE FAKE-OUT "EASY" TIMER: If a timer is already running, JUST draw the bar!
-            // ==========================================================
-            if (activeTimer) {
-                let elapsed = Date.now() - activeTimer.startTime;
-                let progress = Math.min(elapsed / 10000, 1);
-                
-                document.getElementById('dash-status').innerText = `ANALYZING: ${activeTimer.threatText}`; 
-                document.getElementById('dash-status').style.color = "var(--orange)";
-
-                // Draw cinematic Progress Bar
-                ctx.fillStyle = "rgba(0, 0, 0, 0.8)"; ctx.fillRect(canvas.width/2 - 200, 40, 400, 35); 
-                ctx.fillStyle = "var(--orange)"; ctx.fillRect(canvas.width/2 - 200, 40, progress * 400, 35); 
-                ctx.fillStyle = "#fff"; ctx.font = "18px 'Share Tech Mono'"; ctx.textAlign = "center";
-                ctx.fillText(`VERIFYING INTENT: ${Math.floor(elapsed/1000)}s / 10s`, canvas.width/2, 64);
-
-                // When it hits 10 seconds, boom! Alarm.
-                if (elapsed >= 10000) {
-                    triggerFinalAlarm(activeTimer.threatText, ctx, canvas);
-                    activeTimer = { threatText: "ALARM TRIGGERED", startTime: Date.now() + 9999999 }; // Pause it until the 6-second reset happens
-                }
-                
-                requestAnimationFrame(runMasterInferenceLoop);
-                return; // SKIP THE AI MATH WHILE THE TIMER IS RUNNING!
-            }
-
             let frameThreat = null; 
             const preds = await objectModel.detect(video);
 
@@ -143,11 +232,11 @@
                     }
                 });
                 
-                if (intruderCount > 0) frameThreat = { threat: `${intruderCount} HUMAN INTRUDER(S) DETECTED` };
+                if (intruderCount > 0) frameThreat = { type: 'geofence', threat: `${intruderCount} HUMAN INTRUDER(S) DETECTED` };
             } 
             
             // ==========================================================
-            // ACTIONS 2-5: PUBLIC CROWD (OMNIDIRECTIONAL MATH)
+            // ACTIONS 2-5: PUBLIC CROWD 
             // ==========================================================
             else if (currentMode === 'PUBLIC') {
                 const poses = await poseModel.estimatePoses(video);
@@ -155,45 +244,88 @@
                     poses.forEach(pose => {
                         pose.keypoints.forEach(k => { if(k.score > 0.3) { ctx.fillStyle = 'rgba(6,182,212,0.8)'; ctx.beginPath(); ctx.arc(getMirroredX(k.x, canvas.width), k.y, 4, 0, 2*Math.PI); ctx.fill(); } });
                         
-                        const getKP = (name) => pose.keypoints.find(k=>k.name===name);
-                        let lW = getKP('left_wrist'), rW = getKP('right_wrist'), nose = getKP('nose');
-                        let lS = getKP('left_shoulder'), rS = getKP('right_shoulder'), rE = getKP('right_elbow');
+                        let lW = pose.keypoints.find(k=>k.name==='left_wrist'), rW = pose.keypoints.find(k=>k.name==='right_wrist');
+                        let lH = pose.keypoints.find(k=>k.name==='left_hip'), rH = pose.keypoints.find(k=>k.name==='right_hip');
+                        let nose = pose.keypoints.find(k=>k.name==='nose');
+                        let lS = pose.keypoints.find(k=>k.name==='left_shoulder'), rS = pose.keypoints.find(k=>k.name==='right_shoulder');
+                        let lE = pose.keypoints.find(k=>k.name==='left_elbow'), rE = pose.keypoints.find(k=>k.name==='right_elbow');
                         
                         // ACTION 2: Distress
-                        if(lW && rW && nose && lW.score > 0.3 && rW.score > 0.3 && lW.y < nose.y - 20 && rW.y < nose.y - 20) frameThreat = { threat: "DISTRESS SIGNAL DETECTED" };
+                        if(lW && rW && nose && lW.score > 0.3 && rW.score > 0.3 && lW.y < nose.y - 20 && rW.y < nose.y - 20) frameThreat = { type: 'distress', threat: "DISTRESS SIGNAL DETECTED" };
                         
                         // ACTION 3: Aggressive Pointing
-                        if(rS && rE && rW && rW.score > 0.3 && rW.y < rS.y + 30 && rW.y > rS.y - 30 && getDist(rW, rS) > 90) frameThreat = { threat: "WEAPON POINTING GESTURE DETECTED" };
+                        if(rS && rE && rW && rW.score > 0.3 && rW.y < rS.y + 30 && rW.y > rS.y - 30 && getDist(rW, rS) > 90) frameThreat = { type: 'pointing', threat: "WEAPON POINTING GESTURE DETECTED" };
                     });
                     
+                    // Multi-Person
                     if (poses.length >= 2 && !frameThreat) {
-                        const p1 = poses[0].keypoints; const p2 = poses[1].keypoints;
-                        const getSafeKP = (kps, name) => kps.find(k => k.name === name && k.score > 0.3);
-                        let p1_rw = getSafeKP(p1, 'right_wrist'), p1_lw = getSafeKP(p1, 'left_wrist'), p1_nose = getSafeKP(p1, 'nose'), p1_hip = getSafeKP(p1, 'left_hip');
-                        let p2_rw = getSafeKP(p2, 'right_wrist'), p2_lw = getSafeKP(p2, 'left_wrist'), p2_nose = getSafeKP(p2, 'nose'), p2_hip = getSafeKP(p2, 'left_hip');
-
-                        const checkHit = (wrist, target, distThresh) => {
-                            if (!wrist || !target) return false;
-                            return getDist({x: getMirroredX(wrist.x, canvas.width), y: wrist.y}, {x: getMirroredX(target.x, canvas.width), y: target.y}) < distThresh;
-                        };
-
-                        // ACTION 4: Assault
-                        if (checkHit(p1_rw, p2_nose, 55) || checkHit(p1_lw, p2_nose, 55) || checkHit(p2_rw, p1_nose, 55) || checkHit(p2_lw, p1_nose, 55)) frameThreat = { threat: "PHYSICAL ALTERCATION DETECTED" };
-                        
-                        // ACTION 5: Pickpocket
-                        else if (checkHit(p1_rw, p2_hip, 45) || checkHit(p1_lw, p2_hip, 45) || checkHit(p2_rw, p1_hip, 45) || checkHit(p2_lw, p1_hip, 45)) frameThreat = { threat: "PICKPOCKET ATTEMPT DETECTED" };
+                        let aW = poses[0].keypoints.find(k=>k.name==='right_wrist'), bN = poses[1].keypoints.find(k=>k.name==='nose'), bH = poses[1].keypoints.find(k=>k.name==='left_hip');
+                        if (aW && aW.score > 0.3) {
+                            let mAW = {x: getMirroredX(aW.x, canvas.width), y: aW.y};
+                            // ACTION 4: Assault
+                            if (bN && bN.score > 0.3 && getDist(mAW, {x: getMirroredX(bN.x, canvas.width), y: bN.y}) < 45) frameThreat = { type: 'assault', threat: "PHYSICAL ASSAULT DETECTED" };
+                            // ACTION 5: Pickpocket
+                            if (bH && bH.score > 0.3 && getDist(mAW, {x: getMirroredX(bH.x, canvas.width), y: bH.y}) < 40) frameThreat = { type: 'theft', threat: "PICKPOCKET ATTEMPT DETECTED" };
+                        }
                     }
                 }
             }
 
-            // If a threat is detected for the FIRST TIME, start the automatic 10 second timer!
-            if (frameThreat && !activeTimer) {
-                activeTimer = { threatText: frameThreat.threat, startTime: Date.now() };
-            } else if (!activeTimer) {
-                document.getElementById('dash-status').innerText = "SYSTEM SECURE"; 
-                document.getElementById('dash-status').style.color = "var(--green)"; 
+            // ==========================================================
+            // THE 10-SECOND "HEAT ACCUMULATOR" (FLAWLESS PROGRESS BAR)
+            // ==========================================================
+            let now = Date.now();
+            let dt = now - lastFrameTime;
+            lastFrameTime = now;
+
+            if (frameThreat) {
+                // If this is a new type of threat, start accumulator
+                if (!pendingThreat || pendingThreat.type !== frameThreat.type) {
+                    pendingThreat = frameThreat;
+                    threatAccumulator = 0;
+                }
+                
+                // Add time to the progress bar!
+                threatAccumulator += dt;
+                
+                // Display the active count on the UI immediately
+                document.getElementById('dash-status').innerText = `ANALYZING: ${frameThreat.threat}`; 
+                document.getElementById('dash-status').style.color = "var(--orange)";
+
+                // Draw Progress Bar
+                let progress = Math.min(threatAccumulator / CONFIG.REQUIRED_DELAY_MS, 1);
+                ctx.fillStyle = "rgba(0, 0, 0, 0.8)"; ctx.fillRect(canvas.width/2 - 200, 40, 400, 35); 
+                ctx.fillStyle = "var(--orange)"; ctx.fillRect(canvas.width/2 - 200, 40, progress * 400, 35); 
+                ctx.fillStyle = "#fff"; ctx.font = "18px 'Share Tech Mono'"; ctx.textAlign = "center";
+                ctx.fillText(`VERIFYING THREAT INTENT: ${Math.floor(threatAccumulator/1000)}s / 10s`, canvas.width/2, 64);
+
+                // HAS IT REACHED 10 SECONDS?
+                if (threatAccumulator >= CONFIG.REQUIRED_DELAY_MS) {
+                    triggerFinalAlarm(frameThreat.threat, ctx, canvas);
+                    threatAccumulator = 0; // Reset after firing
+                }
+
+            } else {
+                // If the AI loses you for 1 frame, it DECAYS slowly instead of instantly resetting!
+                if (threatAccumulator > 0) {
+                    threatAccumulator -= (dt * 1.5); // Drops quickly, but not instantly
+                    
+                    // Still draw the fading bar
+                    let progress = Math.max(threatAccumulator / CONFIG.REQUIRED_DELAY_MS, 0);
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.8)"; ctx.fillRect(canvas.width/2 - 200, 40, 400, 35); 
+                    ctx.fillStyle = "rgba(239, 68, 68, 0.5)"; ctx.fillRect(canvas.width/2 - 200, 40, progress * 400, 35); 
+                    ctx.fillStyle = "#fff"; ctx.font = "18px 'Share Tech Mono'"; ctx.textAlign = "center";
+                    ctx.fillText(`TARGET LOST - DECAYING...`, canvas.width/2, 64);
+                } else {
+                    threatAccumulator = 0;
+                    pendingThreat = null;
+                    document.getElementById('dash-status').innerText = "SYSTEM SECURE"; 
+                    document.getElementById('dash-status').style.color = "var(--green)"; 
+                }
             }
             
             requestAnimationFrame(runMasterInferenceLoop);
         }
     </script>
+</body>
+</html>
