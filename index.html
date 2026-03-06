@@ -327,8 +327,8 @@
         <h2 style="color: var(--cyan); font-size: 2rem; letter-spacing: 2px;">CALIBRATE RESTRICTED ZONE</h2>
         <p style="color: var(--muted); font-family: var(--font-mono); margin-bottom: 20px;">Click and drag to map the 3D polygon array.</p>
         <div style="position: relative; width: 800px; height: 450px; background: #000; border: 2px solid var(--cyan); margin-bottom: 30px; border-radius: 8px; overflow: hidden; box-shadow: 0 0 30px rgba(6,182,212,0.3);">
-            <video id="calib-video" autoplay playsinline muted style="position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
-            <canvas id="calib-canvas" style="position: absolute; width: 100%; height: 100%; z-index: 10; cursor: crosshair;"></canvas>
+            <video id="calib-video" autoplay playsinline muted style="position: absolute; width: 100%; height: 100%; object-fit: fill; transform: scaleX(-1);"></video>
+           <canvas id="calib-canvas" style="position: absolute; width: 100%; height: 100%; z-index: 10; cursor: crosshair; transform: scaleX(-1);"></canvas>
         </div>
         <button class="btn" style="font-size: 1.2rem; padding: 15px 40px;" onclick="deployDashboard()">Compile & Deploy</button>
     </div>
