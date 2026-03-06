@@ -891,43 +891,63 @@
             const preds = await objectModel.detect(video);
             if(!activeThreat) activeThreat = detectFireHeuristic(video, canvas, ctx);
 
-            // 2. Topology Branching
+           // 2. Topology Branching
             if (currentMode === 'HOME') {
+                // FIX 1: Normalize coordinates so it works no matter which way you draw the box!
+                let gX = Math.min(geofence.x, geofence.x + geofence.w);
+                let gY = Math.min(geofence.y, geofence.y + geofence.h);
+                let gW = Math.abs(geofence.w);
+                let gH = Math.abs(geofence.h);
+
                 // Render Spatial Polygon Array
-                ctx.fillStyle = "rgba(6, 182, 212, 0.05)"; ctx.strokeStyle = "rgba(6, 182, 212, 0.4)";
-                ctx.fillRect(geofence.x, geofence.y, geofence.w, geofence.h); 
-                ctx.strokeRect(geofence.x, geofence.y, geofence.w, geofence.h);
+                ctx.fillStyle = "rgba(6, 182, 212, 0.15)"; ctx.strokeStyle = "rgba(6, 182, 212, 0.8)";
+                ctx.lineWidth = 2;
+                ctx.fillRect(gX, gY, gW, gH); 
+                ctx.strokeRect(gX, gY, gW, gH);
                 
                 let intruderCount = 0;
+                let firstIntruderX = null;
                 
                 preds.forEach(p => {
                     // Critical Feature: Non-Human Filtering
                     if (p.class === 'person') {
-                        let mX = getMirroredX(p.bbox[0] + p.bbox[2], canvas.width);
-                        let cX = mX + (p.bbox[2]/2), cY = p.bbox[1] + (p.bbox[3]/2);
+                        // FIX 2: Perfected Mirrored Bounding Box Math
+                        let boxX = canvas.width - (p.bbox[0] + p.bbox[2]);
+                        let boxY = p.bbox[1];
+                        let boxW = p.bbox[2];
+                        let boxH = p.bbox[3];
                         
-                        // Point-in-Polygon check
-                        if (cX > geofence.x && cX < geofence.x + geofence.w && cY > geofence.y && cY < geofence.y + geofence.h) { 
+                        let cX = boxX + (boxW / 2);
+                        let cY = boxY + (boxH / 2);
+                        
+                        // Point-in-Polygon check (Is the person's center inside the box?)
+                        if (cX > gX && cX < gX + gW && cY > gY && cY < gY + gH) { 
                             intruderCount++; 
-                            ctx.strokeStyle = '#ef4444'; ctx.lineWidth=3; 
-                            ctx.strokeRect(mX, p.bbox[1], p.bbox[2], p.bbox[3]); 
+                            if(firstIntruderX === null) firstIntruderX = boxX;
                             
-                            // Visual HUD tracking lines
-                            ctx.beginPath(); ctx.moveTo(mX, p.bbox[1]); ctx.lineTo(mX-20, p.bbox[1]-20); ctx.stroke();
+                            // Target tracked INSIDE zone -> RED BOX
+                            ctx.strokeStyle = '#ef4444'; ctx.lineWidth=4; 
+                            ctx.strokeRect(boxX, boxY, boxW, boxH); 
                             
-                            if (!activeThreat) activeThreat = { threat: "PERIMETER INTRUSION", threatX: mX }; 
+                            // Draw visual HUD crosshair on the intruder
+                            ctx.beginPath(); ctx.moveTo(cX - 15, cY); ctx.lineTo(cX + 15, cY); ctx.stroke();
+                            ctx.beginPath(); ctx.moveTo(cX, cY - 15); ctx.lineTo(cX, cY + 15); ctx.stroke();
+                            
                         } else {
-                            // Target tracked but outside restricted zone
-                            ctx.strokeStyle = '#10b981'; ctx.lineWidth=1; ctx.strokeRect(mX, p.bbox[1], p.bbox[2], p.bbox[3]);
+                            // Target tracked OUTSIDE zone -> GREEN BOX
+                            ctx.strokeStyle = '#10b981'; ctx.lineWidth=2; 
+                            ctx.strokeRect(boxX, boxY, boxW, boxH);
                         }
                     }
                 });
                 
-                // Append explicit human counter to the threat string
+                // FIX 3: Push the exact count to the UI and Voice system
                 if (intruderCount > 0) {
-                    activeThreat.threat = `PERIMETER BREACH: ${intruderCount} INTRUDER DETECTED`;
+                    activeThreat = { 
+                        threat: `PERIMETER BREACH: ${intruderCount} HUMAN INTRUDER DETECTED`, 
+                        threatX: firstIntruderX 
+                    };
                 }
-
             } 
             else if (currentMode === 'PUBLIC') {
                 // Execute Biomechanical Tensors
