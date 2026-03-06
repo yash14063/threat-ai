@@ -236,36 +236,79 @@
             } 
             
             // ==========================================================
-            // ACTIONS 2-5: PUBLIC CROWD 
+           // ==========================================================
+            // ACTIONS 2-5: PUBLIC CROWD (OMNIDIRECTIONAL FIGHT DETECTION)
             // ==========================================================
             else if (currentMode === 'PUBLIC') {
                 const poses = await poseModel.estimatePoses(video);
                 if (poses.length > 0) {
+                    
+                    // 1. Draw Skeletons & Check Single-Person Gestures
                     poses.forEach(pose => {
-                        pose.keypoints.forEach(k => { if(k.score > 0.3) { ctx.fillStyle = 'rgba(6,182,212,0.8)'; ctx.beginPath(); ctx.arc(getMirroredX(k.x, canvas.width), k.y, 4, 0, 2*Math.PI); ctx.fill(); } });
+                        pose.keypoints.forEach(k => { 
+                            if(k.score > 0.3) { 
+                                ctx.fillStyle = 'rgba(6,182,212,0.8)'; ctx.beginPath(); 
+                                ctx.arc(getMirroredX(k.x, canvas.width), k.y, 4, 0, 2*Math.PI); ctx.fill(); 
+                            } 
+                        });
                         
-                        let lW = pose.keypoints.find(k=>k.name==='left_wrist'), rW = pose.keypoints.find(k=>k.name==='right_wrist');
-                        let lH = pose.keypoints.find(k=>k.name==='left_hip'), rH = pose.keypoints.find(k=>k.name==='right_hip');
-                        let nose = pose.keypoints.find(k=>k.name==='nose');
-                        let lS = pose.keypoints.find(k=>k.name==='left_shoulder'), rS = pose.keypoints.find(k=>k.name==='right_shoulder');
-                        let lE = pose.keypoints.find(k=>k.name==='left_elbow'), rE = pose.keypoints.find(k=>k.name==='right_elbow');
+                        const getKP = (name) => pose.keypoints.find(k=>k.name===name);
+                        let lW = getKP('left_wrist'), rW = getKP('right_wrist'), nose = getKP('nose');
+                        let lS = getKP('left_shoulder'), rS = getKP('right_shoulder'), rE = getKP('right_elbow');
                         
-                        // ACTION 2: Distress
-                        if(lW && rW && nose && lW.score > 0.3 && rW.score > 0.3 && lW.y < nose.y - 20 && rW.y < nose.y - 20) frameThreat = { type: 'distress', threat: "DISTRESS SIGNAL DETECTED" };
-                        
-                        // ACTION 3: Aggressive Pointing
-                        if(rS && rE && rW && rW.score > 0.3 && rW.y < rS.y + 30 && rW.y > rS.y - 30 && getDist(rW, rS) > 90) frameThreat = { type: 'pointing', threat: "WEAPON POINTING GESTURE DETECTED" };
+                        // ACTION 2: Distress (Both Hands Up)
+                        if(lW && rW && nose && lW.score > 0.3 && rW.score > 0.3 && lW.y < nose.y - 20 && rW.y < nose.y - 20) {
+                            frameThreat = { type: 'distress', threat: "DISTRESS SIGNAL DETECTED" };
+                        }
+                        // ACTION 3: Weapon Pointing (Stiff Arm)
+                        if(rS && rE && rW && rW.score > 0.3 && rW.y < rS.y + 30 && rW.y > rS.y - 30 && getDist(rW, rS) > 90) {
+                            frameThreat = { type: 'pointing', threat: "WEAPON POINTING GESTURE DETECTED" };
+                        }
                     });
                     
-                    // Multi-Person
+                    // 2. Multi-Person Combat & Theft Math
                     if (poses.length >= 2 && !frameThreat) {
-                        let aW = poses[0].keypoints.find(k=>k.name==='right_wrist'), bN = poses[1].keypoints.find(k=>k.name==='nose'), bH = poses[1].keypoints.find(k=>k.name==='left_hip');
-                        if (aW && aW.score > 0.3) {
-                            let mAW = {x: getMirroredX(aW.x, canvas.width), y: aW.y};
-                            // ACTION 4: Assault
-                            if (bN && bN.score > 0.3 && getDist(mAW, {x: getMirroredX(bN.x, canvas.width), y: bN.y}) < 45) frameThreat = { type: 'assault', threat: "PHYSICAL ASSAULT DETECTED" };
-                            // ACTION 5: Pickpocket
-                            if (bH && bH.score > 0.3 && getDist(mAW, {x: getMirroredX(bH.x, canvas.width), y: bH.y}) < 40) frameThreat = { type: 'theft', threat: "PICKPOCKET ATTEMPT DETECTED" };
+                        const p1 = poses[0].keypoints;
+                        const p2 = poses[1].keypoints;
+                        
+                        const getSafeKP = (kps, name) => kps.find(k => k.name === name && k.score > 0.3);
+                        
+                        // Person 1 Joints
+                        let p1_rw = getSafeKP(p1, 'right_wrist'), p1_lw = getSafeKP(p1, 'left_wrist');
+                        let p1_nose = getSafeKP(p1, 'nose'), p1_hip = getSafeKP(p1, 'left_hip');
+                        
+                        // Person 2 Joints
+                        let p2_rw = getSafeKP(p2, 'right_wrist'), p2_lw = getSafeKP(p2, 'left_wrist');
+                        let p2_nose = getSafeKP(p2, 'nose'), p2_hip = getSafeKP(p2, 'left_hip');
+
+                        // Helper Math Function
+                        const checkHit = (wrist, target, distThresh) => {
+                            if (!wrist || !target) return false;
+                            let wPos = {x: getMirroredX(wrist.x, canvas.width), y: wrist.y};
+                            let tPos = {x: getMirroredX(target.x, canvas.width), y: target.y};
+                            return getDist(wPos, tPos) < distThresh;
+                        };
+
+                        let isFighting = false;
+                        let isTheft = false;
+
+                        // ACTION 4: FIGHTING (Any wrist hits the other person's face/neck area)
+                        if (checkHit(p1_rw, p2_nose, 55) || checkHit(p1_lw, p2_nose, 55) || 
+                            checkHit(p2_rw, p1_nose, 55) || checkHit(p2_lw, p1_nose, 55)) {
+                            isFighting = true;
+                        }
+
+                        // ACTION 5: PICKPOCKET (Any wrist hits the other person's hip/pocket area)
+                        if (!isFighting && (checkHit(p1_rw, p2_hip, 45) || checkHit(p1_lw, p2_hip, 45) || 
+                                            checkHit(p2_rw, p1_hip, 45) || checkHit(p2_lw, p1_hip, 45))) {
+                            isTheft = true;
+                        }
+
+                        // Trigger the Accumulator
+                        if (isFighting) {
+                            frameThreat = { type: 'assault', threat: "PHYSICAL ALTERCATION / FIGHTING DETECTED" };
+                        } else if (isTheft) {
+                            frameThreat = { type: 'theft', threat: "PICKPOCKET ATTEMPT DETECTED" };
                         }
                     }
                 }
