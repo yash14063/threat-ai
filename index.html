@@ -646,37 +646,67 @@
             else { window.deployDashboard(); }
         };
 
-        // 3D Polygon Drawing Logic
+        // 3D Polygon Drawing Logic (PERFECTED MOUSE TRACKING)
         function setupGeofenceLogic() {
-            const c = document.getElementById('calib-canvas'); const v = document.getElementById('calib-video');
-            v.onloadedmetadata = () => { c.width = v.videoWidth; c.height = v.videoHeight; };
-            c.onmousedown = (e) => { isDrawing = true; const r = c.getBoundingClientRect(); startX = (e.clientX - r.left)*(c.width/r.width); startY = (e.clientY - r.top)*(c.height/r.height); geofence = {x:startX, y:startY, w:0, h:0}; };
-            c.onmousemove = (e) => { 
-                if(!isDrawing) return; const r = c.getBoundingClientRect(); 
-                geofence.w = ((e.clientX - r.left)*(c.width/r.width)) - startX; geofence.h = ((e.clientY - r.top)*(c.height/r.height)) - startY; 
-                let ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); 
-                ctx.fillStyle="rgba(6,182,212,0.2)"; ctx.strokeStyle="rgba(6,182,212,0.8)"; ctx.lineWidth=2; 
-                ctx.fillRect(geofence.x,geofence.y,geofence.w,geofence.h); ctx.strokeRect(geofence.x,geofence.y,geofence.w,geofence.h);
-            };
-            c.onmouseup = () => isDrawing = false;
-        }
-
-        window.deployDashboard = () => {
-            if(currentMode === 'HOME' && !geofence) geofence = {x: 200, y: 150, w: 400, h: 300}; // Failsafe bounds
-            window.switchView('dashboard');
+            const c = document.getElementById('calib-canvas'); 
+            const v = document.getElementById('calib-video');
             
-            const v = document.getElementById('dash-video-main'), c = document.getElementById('dash-canvas');
             v.onloadedmetadata = () => { 
-                c.width = v.videoWidth; c.height = v.videoHeight; 
-                document.getElementById('health-canvas').width = 300;
-                drawHealthGraph();
-                runMasterInferenceLoop(); 
+                c.width = v.videoWidth; 
+                c.height = v.videoHeight; 
             };
             
-            document.getElementById('dash-subtext').innerText = currentMode === 'HOME' ? "> Perimeter human filtering active." : "> Multi-pose spatial inference active.";
-            window.showToast("Edge Neural Networks Compiled. All Nodes Active.");
-            window.logEvent("Edge Engine Boot Successful", "var(--green)");
-        };
+            c.onmousedown = (e) => { 
+                isDrawing = true; 
+                const r = c.getBoundingClientRect(); 
+                
+                // Perfectly map mouse coordinates to internal resolution
+                let scaleX = c.width / r.width;
+                let scaleY = c.height / r.height;
+                
+                startX = (e.clientX - r.left) * scaleX; 
+                startY = (e.clientY - r.top) * scaleY; 
+                
+                geofence = {x: startX, y: startY, w: 0, h: 0}; 
+            };
+            
+            c.onmousemove = (e) => { 
+                if(!isDrawing) return; 
+                const r = c.getBoundingClientRect(); 
+                
+                let scaleX = c.width / r.width;
+                let scaleY = c.height / r.height;
+                
+                let currentX = (e.clientX - r.left) * scaleX;
+                let currentY = (e.clientY - r.top) * scaleY;
+                
+                geofence.w = currentX - startX; 
+                geofence.h = currentY - startY; 
+                
+                let ctx = c.getContext('2d'); 
+                ctx.clearRect(0,0,c.width,c.height); 
+                
+                // Allow drawing backwards or forwards seamlessly
+                let drawX = geofence.w < 0 ? currentX : startX;
+                let drawY = geofence.h < 0 ? currentY : startY;
+                let drawW = Math.abs(geofence.w);
+                let drawH = Math.abs(geofence.h);
+
+                ctx.fillStyle = "rgba(6,182,212,0.3)"; 
+                ctx.strokeStyle = "rgba(6,182,212,0.9)"; 
+                ctx.lineWidth = 4; 
+                ctx.fillRect(drawX, drawY, drawW, drawH); 
+                ctx.strokeRect(drawX, drawY, drawW, drawH);
+            };
+            
+            c.onmouseup = () => { 
+                isDrawing = false; 
+                // Failsafe: If you just clicked without dragging, create a default box
+                if(Math.abs(geofence.w) < 20) {
+                    geofence = {x: c.width/4, y: c.height/4, w: c.width/2, h: c.height/2};
+                }
+            };
+        }
 
         // Load TensorFlow Models
         async function loadAIModels() {
